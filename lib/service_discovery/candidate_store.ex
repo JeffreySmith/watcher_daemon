@@ -1,5 +1,11 @@
+defmodule ServiceDiscovery.Candidate do
+  @derive Jason.Encoder
+  defstruct [:service_name, :host, :port]
+end
+
 defmodule ServiceDiscovery.CandidateStore do
   require Logger
+  require ServiceDiscovery.Candidate
 
   @table :sd_candidates
   @doc """
@@ -38,7 +44,7 @@ defmodule ServiceDiscovery.CandidateStore do
     end
   end
 
-  def ensure_table(seed_candidates \\ []) do
+  def ensure_table(service_name \\ "", seed_candidates \\ []) do
     extra = :mnesia.change_config(:extra_db_nodes, Node.list())
 
     Logger.info("[CandidateStore] change_config result=#{inspect(extra)}")
@@ -59,17 +65,17 @@ defmodule ServiceDiscovery.CandidateStore do
       {:aborted, {:no_exists, _}} ->
         {:atomic, :ok} =
           :mnesia.create_table(@table,
-            # :key is {host, port}
-            attributes: [:key, :ignored],
+            # :key is {service_name, host, port}
+            attributes: [:key, :candidate],
             type: :set,
             disc_copies: [node()]
           )
 
         Logger.info("[CandidateStore] created new table on #{node()}")
-        seed(seed_candidates)
+        seed(service_name, seed_candidates)
 
       {:aborted, reason} ->
-        Logger.error("Failed to create table: #{inspect(reason)}")
+        Logger.warning("Failed to create table: #{inspect(reason)}")
     end
 
     :mnesia.wait_for_tables([@table], 10_000)
@@ -86,49 +92,60 @@ defmodule ServiceDiscovery.CandidateStore do
     end
   end
 
-  @spec all() :: [{String.t(), pos_integer()}]
+  # @spec all() :: [{String.t(), String.t(), pos_integer()}]
   def all do
     :mnesia.dirty_all_keys(@table)
-    |> Enum.map(fn {host, port} -> {host, port} end)
+    |> IO.inspect(label: "[CandidateStore] all keys")
+    |> Enum.map(fn key ->
+      [{@table, ^key, candidate}] = :mnesia.dirty_read(@table, key)
+      IO.inspect(candidate, label: "[CandidateStore] read candidate")
+      candidate
+    end)
   end
 
   @spec get_one() :: {String.t(), pos_integer()} | nil
   def get_one do
     case Enum.shuffle(all()) do
       [] -> nil
-      [{host, port} | _] -> {host, port}
+      [{service_name, host, port} | _] -> {service_name, host, port}
     end
   end
 
   def get_one_available do
     all()
     |> Enum.shuffle()
-    |> Enum.find(fn {host, port} -> ServiceDiscovery.Service.tcp_open?(host, port) end)
+    |> IO.inspect(label: "[CandidateStore] shuffled candidates")
+    |> Enum.find(fn %ServiceDiscovery.Candidate{service_name: _sn, host: h, port: p} ->
+      ServiceDiscovery.Service.tcp_open?(h, p)
+    end)
   end
 
-  @spec add(String.t(), pos_integer()) :: :ok
-  def add(host, port) do
-    :mnesia.dirty_write({@table, {host, port}, nil})
-    Logger.info("[CandidateStore] added #{host}:#{port}")
+  # @spec add(String.t(), String.t(), pos_integer()) :: :ok
+  def add(%ServiceDiscovery.Candidate{service_name: sn, host: host, port: port} = candidate) do
+    :mnesia.dirty_write({@table, {sn, host, port}, candidate})
+    Logger.info("[CandidateStore] added #{host}:#{port} for #{sn}")
     :ok
   end
 
-  @spec remove(String.t(), pos_integer()) :: :ok
-  def remove(host, port) do
-    :mnesia.dirty_delete({@table, {host, port}})
-    Logger.info("[CandidateStore] removed #{host}:#{port}")
+  #  @spec remove(String.t(), String.t(), pos_integer()) :: :ok
+  def remove(%ServiceDiscovery.Candidate{service_name: sn, host: host, port: port}) do
+    :mnesia.dirty_delete({@table, {sn, host, port}})
+    Logger.info("[CandidateStore] removed #{host}:#{port} for #{sn}")
     :ok
   end
 
-  @spec member?(String.t(), pos_integer()) :: boolean()
-  def member?(host, port) do
-    :mnesia.dirty_read(@table, {host, port}) != []
+  @spec member?(String.t(), String.t(), pos_integer()) :: boolean()
+  def member?(service_name, host, port) do
+    :mnesia.dirty_read(@table, {service_name, host, port}) != []
   end
 
-  defp seed([]), do: :ok
+  defp seed(_, []), do: :ok
 
-  defp seed(candidates) do
-    Logger.info("[CandidateStore] seeding #{length(candidates)} candidates")
-    Enum.each(candidates, fn {h, p} -> add(h, p) end)
+  defp seed(service_name, candidates) do
+    Logger.info("[CandidateStore] seeding #{length(candidates)} candidates for '#{service_name}'")
+
+    Enum.each(candidates, fn %ServiceDiscovery.Candidate{service_name: sn, host: host, port: port} ->
+      add(%ServiceDiscovery.Candidate{service_name: sn, host: host, port: port})
+    end)
   end
 end

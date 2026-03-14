@@ -33,4 +33,5 @@ config :service_discovery,
       end
     end),
   discovery_timeout_ms: 5_000,
-  http_port: String.to_integer(System.get_env("HTTP_PORT", "4000"))
+  http_port: String.to_integer(System.get_env("HTTP_PORT", "4000")),
+  service_name: System.get_env("NAME", "")

@@ -12,22 +12,43 @@ defmodule ServiceDiscovery.Service do
   def first_available, do: GenServer.call(@via, :first_available)
   def candidates, do: ServiceDiscovery.CandidateStore.all()
 
-  def add_candidate(h, p), do: ServiceDiscovery.CandidateStore.add(h, p)
-  def remove_candidate(h, p), do: ServiceDiscovery.CandidateStore.remove(h, p)
+  def add(s, h, p),
+    do:
+      ServiceDiscovery.CandidateStore.add(%ServiceDiscovery.Candidate{
+        service_name: s,
+        host: h,
+        port: p
+      })
+
+  def remove(s, h, p),
+    do:
+      ServiceDiscovery.CandidateStore.remove(%ServiceDiscovery.Candidate{
+        service_name: s,
+        host: h,
+        port: p
+      })
 
   @impl true
   def init(candidates) do
     Logger.info("[Service] started on #{node()}, candidates=#{inspect(candidates)}")
-    {:ok, MapSet.new(candidates)}
+    candidates = ServiceDiscovery.CandidateStore.all() |> MapSet.new()
+    {:ok, candidates}
   end
 
   @impl true
   def handle_call(:first_available, _from, candidates) do
+    IO.inspect(candidates, label: "[Service] current candidates ")
+
     result =
       candidates
       |> MapSet.to_list()
       |> Enum.shuffle()
-      |> Enum.find_value({:error, :none_available}, fn {h, p} = c ->
+      |> IO.inspect(label: "[Service] checking candidates")
+      |> Enum.find_value({:error, :none_available}, fn %ServiceDiscovery.Candidate{
+                                                         service_name: _sn,
+                                                         host: h,
+                                                         port: p
+                                                       } = c ->
         if tcp_open?(h, p), do: {:ok, c}, else: nil
       end)
 
@@ -35,6 +56,8 @@ defmodule ServiceDiscovery.Service do
   end
 
   def tcp_open?(host, port) do
+    IO.inspect({host, port}, label: "[Service] probing #{host}:#{port}")
+
     case :gen_tcp.connect(
            String.to_charlist(host),
            port,
