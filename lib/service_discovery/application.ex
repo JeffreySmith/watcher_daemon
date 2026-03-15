@@ -27,6 +27,8 @@ defmodule ServiceDiscovery.Application do
        [name: ServiceDiscovery.HordeSupervisor, strategy: :one_for_one, members: :auto]},
       ServiceDiscovery.NodeWatcher,
       ServiceDiscovery.ServiceStarter,
+      {ServiceDiscovery.CandidatePoller,
+       poll_interval: 5_000, max_concurrency: 8, probe_timout: 500},
       {Plug.Cowboy, scheme: :http, plug: ServiceDiscovery.HTTP, options: [port: port]}
     ]
 

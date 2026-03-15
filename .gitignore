@@ -23,3 +23,5 @@ erl_crash.dump
 service_discovery-*.tar
 
 Mnesia*/
+*.py
+test.sh

@@ -1,18 +1,26 @@
 defmodule ServiceDiscovery.Candidate do
   @derive Jason.Encoder
   defstruct [:service_name, :host, :port]
+
+  @type t :: %__MODULE__{
+          service_name: String.t(),
+          host: String.t(),
+          port: pos_integer()
+        }
 end
 
 defmodule ServiceDiscovery.CandidateStore do
   require Logger
   require ServiceDiscovery.Candidate
 
-  @table :api_auth
   @table :sd_candidates
+  # The cache for which services are currently up. Only in memory
+  @ets_table :candidate_cache
   @doc """
   Initialize Mnesia on this node
   """
   def start() do
+    # We stop this in order to enable local file storage
     :mnesia.stop()
 
     peers = Application.get_env(:service_discovery, :peers, [])
@@ -93,31 +101,65 @@ defmodule ServiceDiscovery.CandidateStore do
     end
   end
 
-  # @spec all() :: [{String.t(), String.t(), pos_integer()}]
+  @spec all() :: [ServiceDiscovery.Candidate.t()]
   def all do
-    :mnesia.dirty_all_keys(@table)
-    |> IO.inspect(label: "[CandidateStore] all keys")
-    |> Enum.map(fn key ->
-      [{@table, ^key, candidate}] = :mnesia.dirty_read(@table, key)
-      IO.inspect(candidate, label: "[CandidateStore] read candidate")
-      candidate
-    end)
+    :mnesia.dirty_match_object({@table, :_, :_})
+    |> Enum.map(fn {@table, _key, candidate} -> candidate end)
+  end
+
+  @spec cached_all() :: [map()]
+  def cached_all do
+    case :ets.info(@ets_table) do
+      # No cache exists
+      :undefined ->
+        Logger.warning("[CandidateStore] cache not found, falling back to Mnesia")
+
+        all()
+        |> Enum.map(fn %ServiceDiscovery.Candidate{service_name: sn, host: h, port: p} ->
+          %{
+            service_name: sn,
+            host: h,
+            port: p,
+            up: nil,
+            last_checked: nil
+          }
+        end)
+
+      _ ->
+        :ets.tab2list(:candidate_cache)
+        |> Enum.map(fn {{_sn, _host, _port}, %{} = value_map} ->
+          %{
+            service_name: Map.get(value_map, :service_name),
+            host: Map.get(value_map, :host),
+            port: Map.get(value_map, :port),
+            up: Map.get(value_map, :up),
+            last_checked: Map.get(value_map, :last_checked)
+          }
+        end)
+        |> Enum.reject(&is_nil/1)
+    end
   end
 
   @spec get_one() :: {String.t(), pos_integer()} | nil
   def get_one do
-    case Enum.shuffle(all()) do
+    case Enum.shuffle(cached_all()) do
       [] -> nil
       [{service_name, host, port} | _] -> {service_name, host, port}
     end
   end
 
+  def get_all_available do
+    cached_all()
+    |> Enum.filter(fn m -> match?(%{up: true}, m) end)
+  end
+
   def get_one_available do
-    all()
+    cached_all()
     |> Enum.shuffle()
     |> IO.inspect(label: "[CandidateStore] shuffled candidates")
-    |> Enum.find(fn %ServiceDiscovery.Candidate{service_name: _sn, host: h, port: p} ->
-      ServiceDiscovery.Service.tcp_open?(h, p)
+    |> Enum.find(fn
+      %{up: true} -> true
+      _ -> false
     end)
   end
 

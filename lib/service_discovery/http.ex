@@ -11,33 +11,53 @@ defmodule ServiceDiscovery.HTTP do
   plug(:match)
   plug(:dispatch)
 
+  defp send_json(conn, status, data) do
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(status, Jason.encode!(data))
+  end
+
+  defp candidate_to_tuple(%{service_name: sn, host: h, port: p})
+       when is_binary(sn) and is_binary(h) and is_integer(p), do: {sn, h, p}
+
+  defp candidate_to_tuple(candidate) when is_map(candidate) do
+    sn = Map.get(candidate, :service_name) || Map.get(candidate, "service_name")
+    h = Map.get(candidate, :host)
+    p = Map.get(candidate, :port)
+    if is_nil(sn) or is_nil(h) or is_nil(p), do: :invalid, else: {sn, h, p}
+  end
+
   get "/" do
     send_resp(conn, 200, "Service Discovery API")
   end
 
   get "/candidate" do
     case ServiceDiscovery.CandidateStore.get_one_available() do
-      %ServiceDiscovery.Candidate{service_name: sn, host: h, port: p} ->
-        send_resp(conn, 200, Jason.encode!(%{service: sn, host: h, port: p}))
-
       nil ->
         send_resp(conn, 503, Jason.encode!(%{error: "No candidates available"}))
+
+      cand ->
+        case candidate_to_tuple(cand) do
+          :invalid ->
+            Logger.error("[HTTP] /candidate: invalid candidate shape: #{inspect(cand)}")
+            send_json(conn, 500, %{error: "Internal server error"})
+
+          {service_name, host, port} ->
+            send_json(conn, 200, %{service: service_name, host: host, port: port})
+        end
     end
   end
 
   get "/candidates" do
     candidates =
-      ServiceDiscovery.Service.candidates()
-      |> Enum.map(fn %ServiceDiscovery.Candidate{service_name: sn, host: h, port: p} ->
-        %{service_name: sn, host: h, port: p, up: ServiceDiscovery.Service.tcp_open?(h, p)}
-      end)
+      ServiceDiscovery.CandidateStore.cached_all()
 
     case candidates do
       [] ->
         send_resp(conn, 503, Jason.encode!(%{error: "No candidates available"}))
 
       _ ->
-        send_resp(conn, 200, Jason.encode!(candidates))
+        send_json(conn, 200, candidates)
     end
   end
 
@@ -46,15 +66,18 @@ defmodule ServiceDiscovery.HTTP do
     IO.inspect(out, label: "[HTTP] first available for '#{name}'")
 
     case out do
-      {:ok, %ServiceDiscovery.Candidate{service_name: ^name, host: host, port: port}} ->
-        send_resp(conn, 200, Jason.encode!(%{service_name: name, host: host, port: port}))
+      {:ok, cand} ->
+        case candidate_to_tuple(cand) do
+          {^name, host, port} ->
+            send_json(conn, 200, %{service_name: name, host: host, port: port})
 
-      {:ok, _} ->
-        send_resp(
-          conn,
-          503,
-          Jason.encode!(%{error: "No candidates available for service '#{name}'"})
-        )
+          {_other_service, _host, _port} ->
+            send_json(conn, 503, %{error: "No candidates available for service '#{name}'"})
+
+          :invalid ->
+            Logger.error("[HTTP] /service/#{name}: invalid candidate : #{inspect(cand)}")
+            send_json(conn, 500, %{error: "Internal server error"})
+        end
 
       {:error, :none_available} ->
         send_resp(
@@ -62,6 +85,9 @@ defmodule ServiceDiscovery.HTTP do
           503,
           Jason.encode!(%{error: "No candidates available for service '#{name}'"})
         )
+
+      _ ->
+        send_json(conn, 500, %{error: "Internal error"})
     end
   end
 
