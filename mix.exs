@@ -24,7 +24,8 @@ defmodule ServiceDiscovery.MixProject do
     [
       {:horde, "~>0.10.0"},
       {:plug_cowboy, "~> 2.0"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:argon2_elixir, "~> 4.0"}
     ]
   end
 end

@@ -7,6 +7,7 @@ defmodule ServiceDiscovery.CandidateStore do
   require Logger
   require ServiceDiscovery.Candidate
 
+  @table :api_auth
   @table :sd_candidates
   @doc """
   Initialize Mnesia on this node

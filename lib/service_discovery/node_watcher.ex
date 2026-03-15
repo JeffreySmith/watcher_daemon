@@ -16,9 +16,11 @@ defmodule ServiceDiscovery.NodeWatcher do
     Application.get_env(:service_discovery, :peers, [])
     |> Enum.each(&connect/1)
 
-    name = Application.get_env(:service_discovery, :service_name, "python_server")
+    name = Application.get_env(:service_discovery, :service_name, "unnamed")
     seed = Application.get_env(:service_discovery, :candidates, [])
     ServiceDiscovery.CandidateStore.ensure_table(name, seed)
+
+    ServiceDiscovery.AuthStore.ensure_table()
 
     {:noreply, state}
   end

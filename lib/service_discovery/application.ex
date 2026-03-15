@@ -6,7 +6,20 @@ defmodule ServiceDiscovery.Application do
 
   def start(_type, _args) do
     ServiceDiscovery.CandidateStore.start()
+    ServiceDiscovery.AuthStore.start()
     port = Application.get_env(:service_discovery, :http_port, 4000)
+    password = Application.get_env(:service_discovery, :password, "")
+
+    pass =
+      case password do
+        "" ->
+          ""
+
+        pass ->
+          Argon2.hash_pwd_salt(pass)
+      end
+
+    Logger.info("Using password hash: #{pass}")
 
     children = [
       {Horde.Registry, [name: ServiceDiscovery.Registry, keys: :unique]},

@@ -81,6 +81,29 @@ defmodule ServiceDiscovery.HTTP do
     end
   end
 
+  post "/auth" do
+    case conn.body_params do
+      %{"password" => pw, "username" => user} ->
+        case ServiceDiscovery.AuthStore.verify_user(user, pw) do
+          {:ok, user} ->
+            send_resp(
+              conn,
+              200,
+              Jason.encode!(%{valid: true, user: user})
+            )
+
+          {:error, :invalid_credentials} ->
+            send_resp(conn, 401, Jason.encode!(%{message: "Invalid credentials"}))
+
+          _ ->
+            send_resp(conn, 401, Jason.encode!(%{message: "Invalid credentials"}))
+        end
+
+      _ ->
+        send_resp(conn, 401, Jason.encode!(%{message: "Invalid credentials"}))
+    end
+  end
+
   post "/candidate" do
     case conn.body_params do
       %{"service_name" => sn, "host" => host, "port" => port} ->
