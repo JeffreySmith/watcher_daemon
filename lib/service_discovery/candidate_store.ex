@@ -206,15 +206,31 @@ defmodule ServiceDiscovery.CandidateStore do
 
   # @spec add(String.t(), String.t(), pos_integer()) :: :ok
   def add(%ServiceDiscovery.Candidate{service_name: sn, host: host, port: port} = candidate) do
-    :mnesia.dirty_write({@table, {sn, host, port}, candidate})
-    Logger.info("[CandidateStore] added #{host}:#{port} for #{sn}")
-    :ok
+    case :mnesia.dirty_write({@table, {sn, host, port}, candidate}) do
+      :ok ->
+        Logger.info("[CandidateStore] added #{host}:#{port} for #{sn}")
+        :ok
+
+      {:error, reason} ->
+        Logger.error(
+          "[CandidateStore] failed to add #{host}:#{port} for #{sn}: #{inspect(reason)}"
+        )
+    end
   end
 
   #  @spec remove(String.t(), String.t(), pos_integer()) :: :ok
   def remove(%ServiceDiscovery.Candidate{service_name: sn, host: host, port: port}) do
-    :mnesia.dirty_delete({@table, {sn, host, port}})
-    Logger.info("[CandidateStore] removed #{host}:#{port} for #{sn}")
+    case :mnesia.dirty_delete({@table, {sn, host, port}}) do
+      :ok ->
+        Logger.info("[CandidateStore] removed #{host}:#{port} for #{sn}")
+        :ok
+
+      {:error, reason} ->
+        Logger.error(
+          "[CandidateStore] failed to remove #{host}:#{port} for #{sn}: #{inspect(reason)}"
+        )
+    end
+
     :ok
   end
 
