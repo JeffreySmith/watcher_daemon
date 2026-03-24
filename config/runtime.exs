@@ -36,4 +36,6 @@ config :service_discovery,
   http_port: String.to_integer(System.get_env("HTTP_PORT", "4000")),
   service_name: System.get_env("NAME", ""),
   password: System.get_env("PASSWORD", ""),
-  auth_enabled: System.get_env("AUTH_ENABLED", "false") == "true"
+  auth_enabled: System.get_env("AUTH_ENABLED", "false") == "true",
+  audit_log_path: System.get_env("AUDIT_LOG_PATH", ""),
+  masked_fields: System.get_env("MASKED_FIELDS", "password secret token old_password")

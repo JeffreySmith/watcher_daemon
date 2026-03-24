@@ -9,6 +9,7 @@ defmodule ServiceDiscovery.HTTP do
   )
 
   plug(:match)
+  plug(ServiceDiscovery.AuditLog)
   plug(:maybe_authenticate)
   plug(:dispatch)
 
