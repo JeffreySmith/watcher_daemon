@@ -19,6 +19,7 @@ defmodule ServiceDiscovery.CandidateStore do
   @doc """
   Initialize Mnesia on this node
   """
+
   def start() do
     # We stop this in order to enable local file storage
     :mnesia.stop()
@@ -70,6 +71,7 @@ defmodule ServiceDiscovery.CandidateStore do
 
       {:aborted, {:already_exists, _}} ->
         Logger.info("[CandidateStore] table already present on this node")
+        maybe_force_load()
 
       {:aborted, {:no_exists, _}} ->
         {:atomic, :ok} =
@@ -88,6 +90,45 @@ defmodule ServiceDiscovery.CandidateStore do
     end
 
     :mnesia.wait_for_tables([@table], 10_000)
+  end
+
+  defp maybe_force_load do
+    case :mnesia.table_info(@table, :where_to_read) do
+      :nowhere ->
+        Logger.warning(
+          "[CandidateStore] table #{@table} not found locally, forcing load from disk"
+        )
+
+        force_load()
+
+      _node ->
+        :ok
+    end
+  end
+
+  defp force_load do
+    case :mnesia.force_load_table(@table) do
+      :yes ->
+        Logger.info("[CandidateStore] force load suceeded")
+
+      :no ->
+        Logger.error(
+          "[CandidateStore] force load failed - no disk copy found, table will be empty"
+        )
+
+        :mnesia.delete_table(@table)
+
+        {:atomic, :ok} =
+          :mnesia.create_table(@table,
+            attributes: [:key, :candidate],
+            type: :set,
+            disc_copies: [node()]
+          )
+
+        Logger.warning(
+          "[CandidateStore] table recreated empty on #{node()} after unrecoverable state"
+        )
+    end
   end
 
   @doc """

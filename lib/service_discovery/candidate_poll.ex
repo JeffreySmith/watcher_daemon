@@ -10,7 +10,7 @@ defmodule ServiceDiscovery.CandidatePoller do
   def init(opts) do
     poll_interval = Keyword.get(opts, :poll_interval, 10_000)
     max_concurrency = Keyword.get(opts, :max_concurrency, 10)
-    probe_timout = Keyword.get(opts, :probe_timeout, 500)
+    probe_timeout = Keyword.get(opts, :probe_timeout, 500)
 
     ets =
       :ets.new(@ets_table, [
@@ -23,10 +23,12 @@ defmodule ServiceDiscovery.CandidatePoller do
 
     Logger.info("[CandidatePoller] created ETS table #{inspect(ets)}")
 
+    # :mnesia.wait_for_tables([:sd_candidates], 10_000)
+
     state = %{
       poll_interval: poll_interval,
       max_concurrency: max_concurrency,
-      probe_timeout: probe_timout
+      probe_timeout: probe_timeout
     }
 
     Process.send_after(self(), :poll, 500)

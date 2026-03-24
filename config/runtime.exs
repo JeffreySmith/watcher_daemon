@@ -35,4 +35,5 @@ config :service_discovery,
   discovery_timeout_ms: 5_000,
   http_port: String.to_integer(System.get_env("HTTP_PORT", "4000")),
   service_name: System.get_env("NAME", ""),
-  password: System.get_env("PASSWORD", "")
+  password: System.get_env("PASSWORD", ""),
+  auth_enabled: System.get_env("AUTH_ENABLED", "false") == "true"

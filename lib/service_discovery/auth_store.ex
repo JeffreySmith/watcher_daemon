@@ -60,7 +60,39 @@ defmodule ServiceDiscovery.AuthStore do
         Logger.error("[AuthStore] failed to add table copy: #{inspect(reason)}")
     end
 
-    :mnesia.wait_for_tables([@table], 10_000)
+    :mnesia.wait_for_tables([@table], 5_000)
+    ensure_default_user()
+  end
+
+  defp ensure_default_user do
+    case all_users() do
+      [] ->
+        password = :crypto.strong_rand_bytes(32) |> Base.encode64(padding: false)
+        {:atomic, :ok} = add_user("admin", password)
+
+        Logger.warning("""
+
+        ============================================================================
+
+        No users found. Default admin user created.
+        Username: admin
+        Password: #{password}
+        This will not be shown again.
+        ============================================================================
+
+        """)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp add_user(username, password) do
+    hash = Argon2.hash_pwd_salt(password)
+
+    :mnesia.transaction(fn ->
+      :mnesia.write({@table, username, hash})
+    end)
   end
 
   def create_user(username, password) do
@@ -80,8 +112,9 @@ defmodule ServiceDiscovery.AuthStore do
       {:atomic, :ok} ->
         Logger.info("User #{username} already exists")
 
-      _ ->
+      e ->
         Logger.warning("User #{username} default case???")
+        Logger.warning("Error?? #{e}")
     end
   end
 
@@ -162,5 +195,23 @@ defmodule ServiceDiscovery.AuthStore do
         Logger.error("Failed to delete user #{username}: #{inspect(reason)}")
         {:error, reason}
     end
+  end
+
+  defp all_users do
+    {:atomic, result} =
+      :mnesia.transaction(fn ->
+        :mnesia.all_keys(@table)
+      end)
+
+    result
+  end
+
+  def member?(user) do
+    {:atomic, result} =
+      :mnesia.transaction(fn ->
+        :mnesia.read(@table, user)
+      end)
+
+    result != []
   end
 end
