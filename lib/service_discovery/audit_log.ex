@@ -39,7 +39,7 @@ defmodule ServiceDiscovery.AuditLog do
 
     Logger.info(
       "[AuditLog] #{conn.method} #{conn.request_path} " <>
-        "user=#{user} ip=#{ip} body=#{inspect(masked_body)}"
+        "user=#{masked_user} ip=#{masked_ip} body=#{inspect(masked_body)}"
     )
 
     append_to_file(entry)
